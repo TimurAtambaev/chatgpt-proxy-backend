@@ -1,0 +1,31 @@
+version: "3"
+
+services:
+   postgres:
+     image: postgres:14.5
+     ports:
+       - "15432:5432"
+     env_file:
+       - .env
+     networks:
+       - gpt
+
+   chat:
+     build:
+       dockerfile: Dockerfile
+       context: .
+     env_file:
+       - .env
+     depends_on:
+       - postgres
+     ports:
+       - "8080:8080"
+     links:
+       - postgres
+     networks:
+       - gpt
+
+networks:
+  gpt:
+    external:
+      name: gpt-net

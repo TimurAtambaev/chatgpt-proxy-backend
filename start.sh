@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-wait-for-it postgres:5432 -t 60
+wait-for-it "$DB_HOST":5432 -t 60
 
 alembic -c /etc/chat/alembic.ini upgrade head
 

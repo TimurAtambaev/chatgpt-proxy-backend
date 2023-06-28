@@ -1,0 +1,46 @@
+stages:
+  - build
+  - quality
+  - staging
+
+### App building ###
+build image:
+  stage: build
+  image: gcr.io/kaniko-project/executor:debug
+  script:
+    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"username\":\"$CI_REGISTRY_USER\",\"password\":\"$CI_REGISTRY_PASSWORD\"}}}" > /kaniko/.docker/config.json
+    - /kaniko/executor --cache=true --context $CI_PROJECT_DIR --dockerfile $CI_PROJECT_DIR/Dockerfile --destination $CI_REGISTRY_IMAGE:$CI_PIPELINE_ID --build-arg "CI_JOB_TOKEN=$CI_JOB_TOKEN"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_REF_NAME =~ /^release.*$/
+    - if: $CI_COMMIT_REF_NAME =~ /^hotfix.*$/
+    - if: $CI_COMMIT_TAG
+
+### Quality assurance ###
+codestyle:
+  stage: quality
+  image: $CI_REGISTRY_IMAGE:$CI_PIPELINE_ID
+  allow_failure: false
+  needs:
+    - build image
+  script:
+    - make check
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_REF_NAME =~ /^release.*$/
+    - if: $CI_COMMIT_REF_NAME =~ /^hotfix.*$/
+    - if: $CI_COMMIT_TAG
+
+### Staging ###
+deploy-stage:
+  stage: staging
+  image: dtzar/helm-kubectl:3.9
+  script:
+    - |
+      helm upgrade --install -n glados staging-back ./.deploy \
+        --set image.tag=$CI_PIPELINE_ID,image.repository=$CI_REGISTRY_IMAGE,env.OPENAI_API_KEY=$OPENAI_API_KEY \
+        --values=./.deploy/stage.yaml
+  rules:
+    - if: $CI_COMMIT_REF_NAME =~ /^release.*$/
+    - if: $CI_COMMIT_REF_NAME =~ /^hotfix.*$/
+

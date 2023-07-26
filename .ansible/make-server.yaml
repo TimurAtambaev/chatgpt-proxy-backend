@@ -1,0 +1,129 @@
+---
+- hosts: prod
+  remote_user: support
+
+  handlers:
+  - name: Restart PostgreSQL
+    service:
+      name: postgresql
+      state: restarted
+
+  tasks:
+  - name: Install repository for python 3.11
+    become: true
+    apt_repository:
+      repo: ppa:deadsnakes/ppa
+      state: present
+
+  - name: Run apt-get update
+    become: true
+    ignore_errors: yes
+    apt:
+      update_cache: yes
+
+  - name: Install apt packages
+    become: true
+    apt:
+      name: "{{ package }}"
+    vars:
+      package:
+      - nginx
+      - postgresql
+      - postgresql-contrib
+      - libpq-dev
+      - gcc
+      - musl-dev
+      - libc-dev
+      - libffi-dev
+      - libssl-dev
+      - wait-for-it
+      - curl
+      - python3.11
+      - python3.11-dev
+      - python3-pip
+
+  - name: Install pip packages
+    become: true
+    pip:
+      extra_args: --upgrade
+      name:
+        - psycopg2
+
+  - name: Install Poetry
+    become: true
+    shell:
+      cmd: curl -sSL https://install.python-poetry.org | POETRY_HOME=/etc/poetry POETRY_VERSION="1.5.1" python3 -
+
+  - name: Set PostgreSQL user password
+    become: true
+    become_user: postgres
+    postgresql_query:
+      query: "ALTER USER postgres WITH PASSWORD '{{ postgres_user_pass }}';"
+
+  - name: Change PostgreSQL configuration to allow postgres login with password
+    become: true
+    lineinfile:
+      path: /etc/postgresql/14/main/pg_hba.conf
+      regexp: '^local\s*all\s*postgres\s*peer'
+      line: 'local   all             all                                     md5'
+      state: present
+      backrefs: yes
+    notify: Restart PostgreSQL
+
+  - name: Create PostgreSQL user for app databese
+    become_user: postgres
+    postgresql_user:
+      name: "{{ db_user }}"
+      password: "{{ db_pass }}"
+      login_user: postgres
+      login_password: "{{ postgres_user_pass }}"
+      state: present
+
+  - name: Create PostgreSQL database
+    become_user: postgres
+    postgresql_db:
+      name: "{{ db_name }}"
+      owner: "{{ db_user }}"
+      login_user: postgres
+      login_password: "{{ postgres_user_pass }}"
+      state: present
+
+  - name: Create app folder
+    become: true
+    file:
+      path: /srv/app/glados
+      state: directory
+      recurse: yes
+      owner: support
+      group: support
+
+  - name: Copy systemd config on production
+    became: true
+    copy:
+      src: configs/glados.service
+      dest: /etc/systemd/system/
+      remote_src: no
+
+  - name: Enable service
+    become: true
+    shell: "systemctl daemon-reload && systemctl enable glados"
+
+  - name: Create folder for nginx domains
+    become: true
+    file:
+      src: /etc/nginx/sites-enabled
+      state: directory
+
+  - name: Copy nginx config
+    became: true
+    copy:
+      src: configs/nginx.conf
+      dest: /etc/nginx
+      remote_src: no
+
+  - name: Copy glados host config
+    became: true
+    copy:
+      src: configs/default.conf
+      dest: /etc/nginx/sites-enabled
+      remote_src: no

@@ -1,0 +1,54 @@
+---
+- hosts: prod
+  remote_user: support
+  vars:
+    work_dir: /srv/app/glados
+
+  tasks:
+  - name: Create folder for next release
+    file:
+      path: "{{ work_dir }}/next/"
+      state: directory
+
+  - name: Extract archive
+    unarchive:
+      src: "{{ work_dir }}/release.tar.gz"
+      dest: "{{ work_dir }}/next/"
+      remote_src: yes
+
+  - name: Remove archive
+    file:
+      path: "{{ work_dir }}/release.tar.gz"
+      state: absent
+
+  - name: Remove previous
+    file:
+      path: "{{ work_dir }}/previous/"
+      state: absent
+
+  - name:  Move current to previous
+    shell: "mv -f {{ work_dir }}/current {{ work_dir }}/previous"
+
+  - name:  Move next to current
+    shell: "mv -f {{ work_dir }}/next {{ work_dir }}/current"
+
+  - name: Create Python virtual environment
+    command: "python3.11 -m venv {{ work_dir }}/current/.venv"
+    args:
+      chdir: "{{ work_dir }}/current"
+      creates: "{{ work_dir }}/current/.venv"
+
+  - name: Update dependencies
+    shell: |
+      source .venv/bin/activate &&
+      /etc/poetry/bin/poetry config virtualenvs.create false &&
+      /etc/poetry/bin/poetry update
+    args:
+      chdir: "{{ work_dir }}/current"
+
+  - name: Restart app
+    become: true
+    service:
+      name: glados
+      state: restarted
+

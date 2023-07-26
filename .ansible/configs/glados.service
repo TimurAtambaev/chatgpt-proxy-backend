@@ -1,0 +1,17 @@
+[Unit]
+Description=Glados app
+After=network.target
+
+[Service]
+User=support
+Group=support
+WorkingDirectory=/srv/app/glados/current
+Environment="PATH=/srv/app/glados/current/.venv"
+EnvironmentFile=/srv/app/glados/current/.env
+ExecStartPre=/srv/app/glados/current/.venv/bin/alembic -c /srv/app/glados/current/alembic.ini upgrade head
+ExecStart=/srv/app/glados/current/.venv/bin/uvicorn chat.app:application --host 0.0.0.0 --port 8000
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+

@@ -1,0 +1,49 @@
+---
+- hosts: prod
+  remote_user: root
+  vars:
+      new_username: support
+
+  handlers:
+  - name: Restart SSH
+    service:
+      name: sshd
+      state: restarted
+
+  # User was created in HestiaCP
+  tasks:
+  - name: Allow the new user to run sudo commands
+    become: true
+    lineinfile:
+      path: /etc/sudoers
+      regex: '^%sudo\s'
+      line: '%sudo ALL=(ALL:ALL) NOPASSWD: ALL'
+      validate: 'visudo -cf %s'
+      state: present
+
+  - name: Add user to sudo group
+    become: true
+    user:
+      name: "{{ new_username }}"
+      groups: sudo
+      append: yes
+      shell: /bin/bash
+
+  - name: Change ownership of /home/support directory
+    become: true
+    file:
+      path: /home/support
+      owner: "{{ new_username }}"
+      group: "{{ new_username }}"
+      state: directory
+
+  - name: Allow user to use sftp and ssh
+    become: true
+    lineinfile:
+      path: /etc/ssh/sshd_config
+      regexp: '^Match User.*'
+      line: 'Match User sftp_dummy99,admin'
+      state: present
+      backrefs: yes
+    notify: Restart SSH
+

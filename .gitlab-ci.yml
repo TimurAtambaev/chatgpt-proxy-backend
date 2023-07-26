@@ -2,6 +2,8 @@ stages:
   - build
   - quality
   - staging
+  - copy-release
+  - deploy
 
 ### App building ###
 build image:
@@ -43,4 +45,41 @@ deploy-stage:
   rules:
     - if: $CI_COMMIT_REF_NAME =~ /^release.*$/
     - if: $CI_COMMIT_REF_NAME =~ /^hotfix.*$/
+
+### Production ###
+production:build:
+  stage: build
+  image: alpine:3.14
+  script:
+    - cat $ENV_PROD > .env
+    - tar -czvf release.tar.gz .env pyproject.toml poetry.lock alembic.ini chat/
+  artifacts:
+    paths:
+      - release.tar.gz
+    expire_in: 1 week
+  only:
+    - tags
+
+production:copy-release:
+  stage: copy-release
+  image: git.webpp.ru:4567/tools/ansible:latest
+  needs: ['production:build']
+  script:
+    - eval $(ssh-agent -s)
+    - chmod 600 $SSH_KEY
+    - bash -c 'ssh-add $SSH_KEY'
+    - scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null release.tar.gz support@212.224.113.254:/srv/app/glados/release.tar.gz
+  only:
+    - tags
+
+production:deploy:
+  stage: deploy
+  image: git.webpp.ru:4567/tools/ansible:latest
+  script:
+    - eval $(ssh-agent -s)
+    - chmod 600 $SSH_KEY
+    - bash -c 'ssh-add $SSH_KEY'
+    - ansible-playbook -i .ansible/hosts .ansible/deploy-prod.yaml --vault-password-file $ANS_VAULT_PASS
+  only:
+    - tags
 
